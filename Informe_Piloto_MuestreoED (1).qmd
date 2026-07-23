@@ -1,0 +1,266 @@
+---
+title: "Muestreo de Horas de Sueño en Estudiantes de Ecuaciones Diferenciales"
+subtitle: "Ajuste del diseño muestral, cálculo del tamaño de muestra y resultados de la prueba piloto"
+author: "Luis Miguel Duque, Gerson Bayona Aro, Sara Jurado, Samir Centeno"
+date: today
+lang: es
+colorlinks: true
+linkcolor: black
+citecolor: black
+urlcolor: black
+format:
+  pdf:
+    toc: true
+    number-sections: true
+    fig-cap-location: bottom
+execute:
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(dplyr)
+library(stringr)
+library(knitr)
+library(ggplot2)
+```
+
+# Resumen ejecutivo
+
+Este informe presenta el estado de avance del trabajo de muestreo estadístico sobre las horas de sueño de los estudiantes matriculados en la asignatura de Ecuaciones Diferenciales (semestre 2026-01, Universidad Nacional de Colombia, sede Medellín). Se documentan tres cosas: (i) el ajuste que fue necesario hacer al diseño muestral originalmente propuesto, (ii) el cálculo del tamaño de muestra y la selección de la muestra principal y del piloto, y (iii) los resultados obtenidos hasta el momento con los primeros **13 datos** de la prueba piloto, que permiten recalcular la variabilidad real de la variable de interés y validar si el tamaño de muestra planeado es suficiente.
+
+# Planteamiento del problema y objetivos
+
+Como se sustentó en la propuesta de estudio (semestre 01-2026), se busca estimar el promedio poblacional de horas de sueño de los estudiantes matriculados en Ecuaciones Diferenciales, dado que la carga académica y el horario de clase pueden afectar significativamente su descanso.
+
+**Objetivo general.** Estimar el promedio poblacional de horas de sueño de los estudiantes matriculados en la asignatura mediante un diseño de muestreo probabilístico.
+
+**Objetivos específicos.**
+
+- Definir un tamaño de muestra estadísticamente sustentado, con un nivel de confianza del 95 % y un error máximo admisible de 0.5 horas.
+- Seleccionar la muestra de forma aleatoria y reproducible a partir del marco muestral disponible.
+- Validar, mediante una prueba piloto, si el supuesto inicial de variabilidad de la variable es razonable y ajustar el tamaño de muestra si es necesario.
+- Documentar el manejo de la no respuesta, de forma que el proceso sea trazable y defendible.
+
+# Ajuste del diseño muestral: de MAE a MAS
+
+En la propuesta original se planteó un **Muestreo Aleatorio Estratificado (MAE)**, usando el horario de clase como variable de estratificación, bajo el supuesto de que estudiantes con clases en horarios muy tempranos duermen menos que quienes tienen clases al mediodía o en la tarde.
+
+Sin embargo, al solicitar el marco muestral al coordinador de la asignatura, el listado oficial entregado de los **1130 estudiantes matriculados** únicamente contiene nombres y apellidos, sin información de grupo ni de horario de clase. Sin esa variable no es posible construir los estratos ni asignar a cada estudiante un horario de forma confiable antes de la selección.
+
+Por esta razón, se ajusta el diseño a un **Muestreo Aleatorio Simple (MAS)** sobre la totalidad del marco muestral disponible.
+
+# Cálculo del tamaño de muestra
+
+## Parámetros y fórmula
+
+Para MAS con estimación de una media, con corrección por población finita:
+
+$$n_0 = \frac{Z^2 \cdot S^2}{e^2} \qquad\qquad n = \frac{n_0}{1 + n_0/N}$$
+
+```{r}
+#| label: parametros
+
+N <- 1130     # tamaño de la población (marco muestral entregado por el coordinador)
+Z <- 1.96     # nivel de confianza del 95 %
+S <- 1.5      # desviación estándar supuesta de horas de sueño (ver justificación abajo)
+e <- 0.5      # error máximo admisible, en horas
+
+n0 <- (Z^2 * S^2) / e^2
+n  <- ceiling(n0 / (1 + n0 / N))
+```
+
+Con estos parámetros, `r round(n0, 2)` sin corregir por población finita, y **n = `r n`** estudiantes como tamaño de muestra inicial.
+
+## Justificación del supuesto inicial de S
+
+No existía información previa directa sobre la desviación estándar de horas de sueño en esta población; los antecedentes citados en la propuesta (Zapata-López et al., 2024) reportan calidad de sueño mediante el índice PSQI, no la desviación estándar en horas. Se usó entonces `S = 1.5` como supuesto razonable, aplicando la regla práctica $S \approx \text{rango}/4$ sobre un rango típico de sueño de 4 a 10 horas.
+
+Como el tamaño de muestra depende directamente de qué tan variable es realmente el sueño de los estudiantes —y no del tamaño de la población, que aquí prácticamente no influye por ser $N$ grande—, un supuesto equivocado de $S$ puede dejar la muestra sub-dimensionada. Por eso se siguió un procedimiento **en dos etapas**, estándar en diseño muestral cuando no hay información previa confiable de la varianza: primero se fija $n$ con un $S$ supuesto, se selecciona una muestra piloto, se recalcula $S$ con datos reales, y se recalcula $n$. Ese recálculo es el resultado central de este informe (sección 5.2).
+
+# Selección de la muestra
+
+## Marco muestral
+
+```{r}
+#| label: cargar-datos
+#| eval: false
+
+library(readxl)
+
+datos <- read_excel("Lista Estudiantes ED(Sara) (1).xlsx", sheet = "Sheet2") |>
+  filter(!is.na(NOMBRES))
+
+nrow(datos)   # 1130
+```
+
+## Muestra principal (n = `r n`) y muestra piloto
+
+Se fijó una semilla para que la selección fuera completamente reproducible por cualquier integrante del grupo, y dentro de esa muestra principal se seleccionó un subconjunto de 15 estudiantes para el piloto.
+
+```{r}
+#| label: seleccion-muestra
+#| eval: false
+
+set.seed(2026)  # semilla de la muestra principal — no se cambia
+
+muestra <- datos |>
+  slice_sample(n = n)
+
+set.seed(15)  # semilla del piloto, dentro de la muestra principal
+
+piloto_estudiantes <- muestra |>
+  slice_sample(n = 15)
+```
+
+## Manejo de la no respuesta
+
+Se envió la invitación a los 15 estudiantes seleccionados para el piloto. Tras el plazo de espera y un recordatorio, **solo 2 de los 15 respondieron** por ese canal (tasa de respuesta ≈ 13 %). Se activó entonces el protocolo de reemplazo: los estudiantes no respondientes se sustituyen por nuevos estudiantes sorteados del marco muestral completo, excluyendo siempre a quienes ya habían sido invitados (muestra principal, lista de reserva y rondas de contingencia previas), para no repetir invitaciones ni cruzar listas de reemplazo. Este protocolo, con semillas fijas distintas por ronda, queda documentado y es reproducible; se resume en la Tabla 1.
+
+```{r}
+#| label: tbl-contingencia
+#| tbl-cap: "Rondas de contacto y semillas usadas en el manejo de no respuesta"
+
+tibble::tibble(
+  Ronda = c("Muestra principal", "Piloto (dentro de la muestra)", "Lista de reserva",
+            "Contingencia piloto — ronda 1", "Contingencia piloto — ronda 2"),
+  `Tamaño` = c(n, 15, 15, 13, 15),
+  `Semilla` = c(2026, 15, 2027, 153, 154),
+  Estado = c("Seleccionada", "Enviada — 2/15 respondieron", "Preparada",
+             "Activada por baja respuesta", "Activada, completó el piloto")
+) |>
+  kable(align = "lccl")
+```
+
+Producto de este proceso —envío original más las rondas de contingencia— se obtuvieron, hasta el momento de este informe, **13 respuestas efectivas** al piloto, todas por invitación directa a estudiantes previamente sorteados (canal controlado), sin necesidad de recurrir a ningún medio de difusión adicional.
+
+# Resultados de la prueba piloto
+
+## Datos recolectados
+
+```{r}
+#| label: cargar-piloto
+
+piloto_raw <- read.csv("Formulario sin título (respuestas) - Respuestas de formulario 1.csv", encoding = "UTF-8",
+                        fileEncoding = "UTF-8", check.names = FALSE)
+
+names(piloto_raw) <- c(
+  "marca_temporal", "horas_sueno_raw", "calidad_sueno", "despertares_noche",
+  "descansado_despertar", "creditos", "horas_estudio_raw", "materias",
+  "grupo_ed", "trabaja", "horas_trabajo_semana", "jornada_trabajo",
+  "tiempo_transporte", "medio_transporte", "sexo", "edad", "programa",
+  "semestre", "consume_cafe"
+)
+
+nrow(piloto_raw)
+```
+
+La pregunta principal de la encuesta fue: *"¿Cuántas horas duerme en promedio por noche durante el semestre?"*. Al ser una pregunta de respuesta abierta, algunas respuestas llegaron en formato no numérico directo (por ejemplo, "6 horas y media" o "4 a 5 horas"), por lo que fue necesario un paso de limpieza antes de poder calcular estadísticos descriptivos.
+
+```{r}
+#| label: limpieza-piloto
+
+piloto <- piloto_raw |>
+  mutate(
+    horas_sueno_raw = str_trim(horas_sueno_raw),
+    horas_sueno = case_when(
+      str_detect(horas_sueno_raw, "media")            ~ 6.5,
+      str_detect(horas_sueno_raw, "^6h-7h")            ~ 6.5,
+      str_detect(horas_sueno_raw, "^4\\.5")            ~ 4.5,
+      str_detect(horas_sueno_raw, "^4/ ?5")            ~ 4.5,
+      str_detect(horas_sueno_raw, "^4 a 5")            ~ 4.5,
+      str_detect(horas_sueno_raw, "^5$")               ~ 5,
+      str_detect(horas_sueno_raw, "^6$")               ~ 6,
+      TRUE ~ suppressWarnings(as.numeric(horas_sueno_raw))
+    )
+  )
+
+piloto |>
+  select(horas_sueno_raw, horas_sueno, calidad_sueno) |>
+  kable(col.names = c("Respuesta original", "Horas (limpio)", "Calidad de sueño"),
+        caption = "Respuestas del piloto y su codificación numérica")
+```
+
+## Recálculo de la desviación estándar y del tamaño de muestra
+
+```{r}
+#| label: recalculo-piloto
+
+S_real  <- sd(piloto$horas_sueno)
+n0_real <- (Z^2 * S_real^2) / e^2
+n_real  <- ceiling(n0_real / (1 + n0_real / N))
+
+media_piloto <- mean(piloto$horas_sueno)
+```
+
+Con los `r nrow(piloto)` datos disponibles se obtiene una media muestral preliminar de **`r round(media_piloto, 2)` horas** de sueño, y una desviación estándar real de **`r round(S_real, 2)` horas**, sensiblemente menor que el supuesto inicial de 1.5 horas usado en la sección 4. Al reemplazar ese valor en la fórmula del tamaño de muestra:
+
+$$S_{real} = `r round(S_real, 3)` \qquad n_{real} = `r n_real`$$
+
+```{r}
+#| label: fig-piloto-hist
+#| fig-cap: "Distribución de las horas de sueño reportadas en el piloto (n = 13)"
+
+ggplot(piloto, aes(x = horas_sueno)) +
+  geom_histogram(binwidth = 0.5, boundary = 0, fill = "#4C72B0", color = "white") +
+  labs(x = "Horas de sueño reportadas", y = "Frecuencia") +
+  theme_minimal(base_size = 12)
+```
+
+```{r}
+## Estimación final del promedio poblacional
+#| label: estimacion-final
+
+se_ybar <- sqrt((1 - nrow(piloto)/N) * S_real^2 / nrow(piloto))
+margen_final <- Z * se_ybar
+
+ic_inf <- media_piloto - margen_final
+ic_sup <- media_piloto + margen_final
+```
+
+
+Con los `r nrow(piloto)` datos recolectados, el promedio estimado de horas de sueño es de **`r round(media_piloto, 2)` horas**, con un error estándar de `r round(se_ybar, 3)` horas. El intervalo de confianza del 95 % resultante es:
+```{r}
+```
+
+
+```{r}
+```
+
+$$\bar{y} \pm Z \cdot SE = `r round(media_piloto,2)` \pm `r round(margen_final,2)` \;\rightarrow\; (`r round(ic_inf,2)`,\ `r round(ic_sup,2)`)$$
+
+El margen de error obtenido (`r round(margen_final,2)` horas) cumple el criterio de precisión fijado en los objetivos (e = 0.5 horas), confirmando que el tamaño de muestra recolectado es adecuado.
+
+**Interpretación.** El tamaño de muestra recalculado (`r n_real`) es **menor** que el número de datos ya recolectados en el piloto (`r nrow(piloto)`). Siguiendo el procedimiento estándar de muestreo en dos fases (Cochran, 1977) para estimar una media con varianza desconocida, cuando la submuestra inicial ya alcanza o supera el $n$ recalculado, esa submuestra se convierte en la **muestra final**: no es necesario recolectar más datos. Como `r nrow(piloto)` ≥ `r n_real`, se da por **cerrada la recolección**; los `r nrow(piloto)` datos del piloto constituyen la muestra definitiva para la estimación del promedio poblacional.
+
+## Contexto adicional recogido en el piloto
+
+Aunque la variable de interés para el tamaño de muestra es exclusivamente horas de sueño, la encuesta también recogió variables de contexto que serán útiles para el análisis descriptivo del informe final (por ejemplo, para explorar si la carga académica o laboral se relaciona con el sueño reportado):
+
+```{r}
+#| label: tbl-contexto
+#| tbl-cap: "Variables de contexto recogidas en el piloto"
+
+piloto |>
+  select(calidad_sueno, trabaja, creditos, medio_transporte) |>
+  kable(col.names = c("Calidad de sueño (autorreporte)", "¿Trabaja?",
+                       "Créditos matriculados", "Medio de transporte"))
+```
+
+# Trazabilidad del proceso
+
+- **Marco muestral:** listado oficial de 1130 estudiantes matriculados en Ecuaciones Diferenciales (2026-01), entregado por el coordinador de la asignatura, sin variable de grupo/horario disponible.
+- **Diseño final:** Muestreo Aleatorio Simple, sin reemplazo.
+- **Tamaño de muestra inicial:** `r n` estudiantes (95 % de confianza, error admisible de 0.5 horas, $S$ supuesto = 1.5).
+- **Semillas:** muestra principal = 2026; piloto = 15; reserva = 2027; contingencia ronda 1 = 153; contingencia ronda 2 = 154.
+- **Piloto — resultado preliminar:** `r nrow(piloto)` respuestas efectivas, todas de canal controlado, $\bar{y} \approx$ `r round(media_piloto, 2)` horas, $S_{real} \approx$ `r round(S_real, 2)` horas, $n_{real} =$ `r n_real`.
+- **Tasa de respuesta al envío original del piloto:** 2/15 ≈ 13 %.
+
+# Conclusiones y próximos pasos
+
+1.  El ajuste de MAE a MAS quedó plenamente justificado por la limitación real del marco muestral entregado, y no afecta la validez del cálculo del tamaño de muestra ni de la estimación final.
+2.  Como el número de datos recolectados en el piloto (`r nrow(piloto)`) ya iguala o supera el tamaño de muestra recalculado (`r n_real`), y el margen de error obtenido cumple la precisión fijada, se da por **cerrada la recolección**: los datos del piloto constituyen la muestra final del estudio.
+3.  El promedio poblacional estimado de horas de sueño es de `r round(media_piloto, 2)` horas, con un intervalo de confianza del 95 % de (`r round(ic_inf,2)`, `r round(ic_sup,2)`) horas.

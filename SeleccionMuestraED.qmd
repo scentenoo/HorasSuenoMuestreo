@@ -1,0 +1,245 @@
+---
+title: "Selección de Muestra — Horas de Sueño, Ecuaciones Diferenciales 2026-01"
+subtitle: "Muestreo Aleatorio Simple (MAS)"
+author: "Luis Miguel Duque, Gerson Bayona Aro, Juan Tabares, Samir Centeno"
+format:
+  pdf:
+    toc: false
+lang: es
+---
+
+## 1. Justificación del cambio de diseño
+
+En la propuesta original se planteó un **Muestreo Aleatorio Estratificado (MAE)**, usando el horario de clase como variable de estratificación. Sin embargo, el marco muestral entregado por el coordinador de la asignatura únicamente contiene **nombres y apellidos** de los 1130 estudiantes matriculados, sin información de grupo ni horario. Al no contar con esa variable, no es posible construir los estratos, por lo que se ajusta el diseño a un **Muestreo Aleatorio Simple (MAS)** sobre la totalidad del marco muestral.
+
+## 2. Parámetros y cálculo del tamaño de muestra
+
+Se usa la fórmula de MAS para estimación de una media, con corrección por población finita:
+
+$$n_0 = \frac{Z^2 \cdot S^2}{e^2} \qquad\qquad n = \frac{n_0}{1 + n_0/N}$$
+
+```{r}
+#| label: parametros
+
+N <- 1130     # tamaño de la población (marco muestral entregado)
+Z <- 1.96     # confianza del 95%
+S <- 1.5      # desviación estándar supuesta de horas de sueño (ajustar si el
+              # profesor exige otro valor o si consiguen una referencia mejor)
+e <- 0.5      # error máximo admisible, en horas
+
+n0 <- (Z^2 * S^2) / e^2
+n  <- ceiling(n0 / (1 + n0 / N))
+
+n0
+n
+```
+
+> **Nota:** `S = 1.5` es un supuesto razonable (rango típico de sueño de 4 a 10 horas, usando la regla práctica S ≈ rango/4), ya que los antecedentes citados en la propuesta (Zapata-López et al., 2024) reportan calidad de sueño (PSQI) y no la desviación estándar en horas. Si el profesor pide sustentar mejor este valor, basta con cambiar `S` en este chunk y todo el documento se recalcula.
+
+### 2.1 Limitación del supuesto y estimación en dos etapas
+
+El valor `S = 1.5` es una **suposición inicial**, no un dato observado. Como el tamaño de muestra depende directamente de qué tan variable es realmente el sueño de los estudiantes (y no del tamaño de la población, que aquí casi no influye por ser N grande), un supuesto equivocado de S puede dejar la muestra sub-dimensionada. Por eso se sigue un procedimiento en dos etapas, estándar en diseño muestral cuando no existe información previa confiable de la varianza:
+
+1.  **Etapa piloto:** se encuesta un subconjunto pequeño de la muestra ya seleccionada (por ejemplo, los primeros 15 estudiantes de los 34).
+2.  **Recalcular S:** con las respuestas del piloto se calcula la desviación estándar muestral real (`sd()` en R).
+3.  **Recalcular n:** se reemplaza el `S` supuesto por el S observado en la misma fórmula del punto 2.
+4.  **Completar la muestra:** si el nuevo n es mayor que 34, se seleccionan estudiantes adicionales del marco muestral (misma semilla, excluyendo a quienes ya fueron seleccionados) hasta alcanzar el n recalculado.
+
+**Registro sobre el origen de los datos del piloto:** por restricciones de tiempo, de las 9 respuestas obtenidas, 6 provienen del canal controlado (correo directo a personas sorteadas) y 3 llegaron por autoselección, tras compartir el enlace de la encuesta en el grupo de WhatsApp del curso. Esta segunda vía **no sigue el mecanismo aleatorio del diseño** (no hay probabilidad de selección controlada), por lo que el `S_real` calculado a continuación se reporta como una **estimación preliminar**, con esa limitación explícita, y no como resultado de un piloto puramente probabilístico.
+
+```{r}
+#| label: recalculo-con-piloto
+
+# Horas de sueño reportadas por los 9 respondientes del piloto
+# (6 de canal controlado + 3 de autoselección vía grupo de WhatsApp — ver nota arriba)
+piloto_horas <- c(5, 6.5, 5, 6.5, 4.5, 4.5, 4.5, 6, 6)
+
+S_real  <- sd(piloto_horas)
+n0_real <- (Z^2 * S_real^2) / e^2
+n_real  <- ceiling(n0_real / (1 + n0_real / N))
+
+S_real
+n_real
+
+# Si n_real > n, seleccionar los estudiantes faltantes excluyendo los ya elegidos
+faltantes <- n_real - n
+if (faltantes > 0) {
+  set.seed(2026)
+  complemento <- datos |>
+    anti_join(muestra, by = c("NOMBRES", "PRIMER_APELLIDO", "SEGUNDO_APELLIDO")) |>
+    slice_sample(n = faltantes)
+  muestra_final <- bind_rows(muestra, complemento)
+} else {
+  muestra_final <- muestra
+}
+
+faltantes
+```
+
+**Resultado:** con los 9 datos disponibles, `S_real ≈ 0.86` horas — bastante menor que el supuesto inicial de 1.5. Esto da `n_real = 12`, **menor** que los 34 ya seleccionados. Es decir, con la variabilidad observada hasta ahora, el tamaño de muestra que ya tienen (34) es más que suficiente; no hace falta ampliarlo (`faltantes` da 0 o negativo). Esto se debe confirmar cuando se complete el piloto con más respuestas del canal controlado, ya que 9 datos —y en parte mezclados con autoselección— siguen siendo una base pequeña para fijar S de forma definitiva.
+
+## 3. Carga del marco muestral
+
+```{r}
+#| label: cargar-datos
+#| message: false
+
+library(readxl)
+library(dplyr)
+
+datos <- read_excel("Lista Estudiantes ED(Sara) (1).xlsx", sheet = "Sheet2") |>
+  filter(!is.na(NOMBRES))
+
+nrow(datos)   # debe ser 1130
+head(datos)
+```
+
+## 4. Selección de la muestra (MAS)
+
+Se fija una semilla para que la selección sea completamente reproducible por cualquier integrante del grupo.
+
+```{r}
+#| label: seleccion-muestra
+
+set.seed(2026)  # semilla fija — no cambiar, garantiza reproducibilidad
+
+muestra <- datos |>
+  slice_sample(n = n)
+
+muestra
+```
+## 4.1 Selección del piloto (15 estudiantes)
+
+Se selecciona un subconjunto de 15 estudiantes **dentro de la muestra de 34 ya elegida** (no son estudiantes distintos), también de forma aleatoria y con semilla fija, para poder trazar exactamente quiénes conforman el piloto.
+
+```{r}
+#| label: seleccion-piloto
+
+set.seed(15)  # semilla fija distinta, exclusiva para el piloto — no cambiar
+
+piloto_estudiantes <- muestra |>
+  slice_sample(n = 15)
+
+piloto_estudiantes
+
+write.csv(piloto_estudiantes, "piloto_seleccionado.csv", row.names = FALSE)
+```
+
+## 4.2 Lista de reserva
+
+Antes de enviar el piloto, se genera una lista de reserva sobre la base completa de 1130 estudiantes (excluyendo a los 34 ya seleccionados), para tener de dónde sacar reemplazos si hay no respuesta, sin improvisar la elección.
+
+```{r}
+#| label: reserva
+
+set.seed(2027)  # semilla fija, distinta a la de la muestra principal
+
+reserva <- datos |>
+  anti_join(muestra, by = c("NOMBRES", "PRIMER_APELLIDO", "SEGUNDO_APELLIDO")) |>
+  slice_sample(n = 15)
+
+reserva
+
+write.csv(reserva, "reserva_reemplazos.csv", row.names = FALSE)
+```
+
+## 4.3 Ronda de contingencia 1 — registro de no respuesta
+
+**Bitácora:** se envió el correo de invitación a los 15 estudiantes de `piloto_seleccionado.csv` (sección 4.1). Tras el plazo de espera y el recordatorio, **solo 2 de los 15 respondieron** (tasa de respuesta ≈ 13%). Se activa el plan de contingencia: se reemplazan los 13 no respondientes por 13 estudiantes nuevos, sacados de la base completa y excluyendo tanto a los 34 de la muestra como a la reserva ya generada, para no invitar dos veces a la misma persona ni cruzar las listas de reemplazo.
+
+```{r}
+#| label: contingencia-piloto
+
+set.seed(153)  # nueva semilla, exclusiva de esta ronda de contingencia
+
+contingencia_piloto <- datos |>
+  anti_join(bind_rows(muestra, reserva),
+            by = c("NOMBRES", "PRIMER_APELLIDO", "SEGUNDO_APELLIDO")) |>
+  slice_sample(n = 13)
+
+contingencia_piloto
+
+write.csv(contingencia_piloto, "piloto_contingencia_ronda1.csv", row.names = FALSE)
+```
+
+El piloto efectivo queda entonces conformado por los 2 que ya respondieron del envío original, más los que respondan de estos 13 nuevos de la ronda 1.
+
+## 4.4 Ronda de contingencia 2
+
+Dado el historial de baja respuesta (2/15 ≈ 13% en la ronda original), se prepara de una vez una segunda ronda de contingencia, por si la ronda 1 repite una tasa de respuesta baja. Se excluyen todos los ya contactados hasta el momento: los 34 de la muestra, la reserva, y los 13 de la ronda 1.
+
+```{r}
+#| label: contingencia-piloto-ronda2
+
+set.seed(154)  # nueva semilla, ronda 2 de contingencia
+
+contingencia_piloto_2 <- datos |>
+  anti_join(bind_rows(muestra, reserva, contingencia_piloto),
+            by = c("NOMBRES", "PRIMER_APELLIDO", "SEGUNDO_APELLIDO")) |>
+  slice_sample(n = 15)
+
+contingencia_piloto_2
+
+write.csv(contingencia_piloto_2, "piloto_contingencia_ronda2.csv", row.names = FALSE)
+```
+
+## 4.5 Consolidado de seguimiento del piloto
+
+Para no manejar tres archivos sueltos, se consolida todo el seguimiento del piloto en una sola tabla, marcando de qué ronda viene cada persona y si ya respondió (columna `estado`, se actualiza manualmente conforme lleguen las respuestas).
+
+```{r}
+#| label: consolidado-piloto
+
+seguimiento_piloto <- bind_rows(
+  piloto_estudiantes  |> mutate(ronda = "original",       estado = "pendiente"),
+  contingencia_piloto |> mutate(ronda = "contingencia_1", estado = "pendiente"),
+  contingencia_piloto_2 |> mutate(ronda = "contingencia_2", estado = "pendiente")
+)
+
+seguimiento_piloto
+
+write.csv(seguimiento_piloto, "piloto_seguimiento.csv", row.names = FALSE)
+```
+
+> **Nota:** en `piloto_seguimiento.csv`, actualicen manualmente la columna `estado` a `"respondió"` o `"no respondió"` conforme lleguen las respuestas. Los 2 que respondieron en la ronda original se marcan aparte al momento de calcular `S_real` en la sección 2.1 — solo entran al cálculo quienes efectivamente contestaron, sin importar de qué ronda vinieron.
+
+## 5. Exportación y obtención de contacto
+
+La universidad no facilita directamente los correos de los seleccionados; es el equipo quien, a partir del nombre completo, los busca en el **directorio institucional público de la universidad** y envía manualmente el correo de invitación a participar en la encuesta a cada estudiante seleccionado.
+
+```{r}
+#| label: exportar
+
+write.csv(muestra, "muestra_seleccionada.csv", row.names = FALSE)
+```
+
+El archivo `muestra_seleccionada.csv` sirve como lista de trabajo para ese proceso de búsqueda y envío, y para marcar quién ya respondió.
+
+## 6. Trazabilidad del proceso
+
+- **Marco muestral:** listado oficial de 1130 estudiantes matriculados en Ecuaciones Diferenciales (2026-01), entregado por el coordinador de la asignatura.
+- **Diseño:** Muestreo Aleatorio Simple, sin reemplazo (`slice_sample` por defecto no repite filas).
+- **Tamaño de muestra:** `r n` estudiantes, calculado con 95% de confianza y error admisible de 0.5 horas.
+- **Semilla muestra principal:** `2026`.
+- **Semilla piloto original:** `15`.
+- **Semilla reserva:** `2027`.
+- **Semilla contingencia ronda 1:** `153` — activada porque solo 2 de los 15 del piloto original respondieron.
+- **Semilla contingencia ronda 2:** `154` — preparada por si la ronda 1 repite baja respuesta.
+- **Piloto — resultado preliminar:** con 9 respuestas recolectadas (6 de canal controlado + 3 de autoselección vía grupo de WhatsApp, ver sección 2.1), `S_real ≈ 0.86` horas, lo que da `n_real = 12` — menor que los 34 ya seleccionados. Pendiente de confirmar con más respuestas del canal controlado.
+- **Instrumento:** encuesta breve con la pregunta "¿Cuántas horas duerme en promedio por noche durante el semestre académico?", aplicada a los estudiantes seleccionados tras obtener sus correos institucionales.
+
+## 7. Hoja de ruta
+
+1.  **Buscar los correos** de los 34 seleccionados en `muestra_seleccionada.csv` en el directorio institucional de la universidad, usando nombre y apellidos.
+2.  **Enviar la encuesta piloto** a los 15 de `piloto_seleccionado.csv` (sección 4.1). *(Ya hecho: 2 de 15 respondieron.)*
+3.  **Activar contingencia ronda 1** (sección 4.3): se sacaron 13 personas nuevas (`piloto_contingencia_ronda1.csv`) para reemplazar a quienes no respondieron. *(Ya hecho.)*
+4.  **Enviar la encuesta a la ronda 1.** Si la respuesta vuelve a ser baja, usar la ronda 2 ya preparada (`piloto_contingencia_ronda2.csv`, sección 4.4) para completar el piloto.
+5.  **Marcar el estado de cada persona** en `piloto_seguimiento.csv` (sección 4.5) conforme lleguen respuestas.
+6.  **Con las respuestas efectivas del piloto** (sin importar de qué ronda vengan), correr el chunk `recalculo-con-piloto` (sección 2.1) para obtener `S_real` y `n_real`. *(Ya hecho con los primeros 9 datos: `S_real ≈ 0.86`, `n_real = 12` — no hace falta ampliar la muestra por ahora.)*
+7.  **Comparar `n_real` con 34:**
+    - Si `n_real <= 34`: ya tienen tamaño suficiente, continúan encuestando al resto de los 34 originales (aplicando el mismo protocolo de recordatorio/reemplazo si hace falta).
+    - Si `n_real > 34`: seleccionar los estudiantes faltantes (el chunk de la sección 2.1 lo hace automáticamente con `anti_join`), buscar sus correos y encuestarlos también.
+8.  **Enviar la encuesta al resto de la muestra**, aplicando siempre el mismo protocolo de reemplazo documentado.
+9.  **Consolidar todas las respuestas** en una sola tabla (nombre + horas de sueño reportadas), incluyendo la tasa de respuesta final.
+10. **Calcular el promedio muestral** $\bar{y}$ y su error estándar, y redactar la sección de resultados del informe final citando estos números.
+11. **Documentar en el informe** el ajuste de MAE a MAS, el supuesto inicial de S, el recálculo con el piloto, y el manejo completo de la no respuesta (rondas 1 y 2 de contingencia) — esto ya está construido en las secciones 1, 2.1, 4.2, 4.3 y 4.4, y responde de antemano a las preguntas que un profesor exigente haría sobre el rigor del diseño.
