@@ -58,7 +58,6 @@ Se exploró la relación entre las horas de sueño y variables auxiliares (núme
 ## 📁 Contenido de este repositorio
 
 - Presentación completa con la documentación del diseño, cálculo de tamaño de muestra, trabajo de campo, estimación y análisis por dominios.
-- (Agregar aquí: script de R/Python usado para los cálculos, base de datos depurada, formulario de recolección)
 
 ## 🎓 Líneas de trabajo futuro
 
